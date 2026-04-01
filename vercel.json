@@ -1,7 +1,12 @@
 {
+  "builds": [
+    {
+      "src": "api/search.py",
+      "use": "@vercel/python"
+    }
+  ],
   "functions": {
     "api/search.py": {
-      "runtime": "python3.12",
       "maxDuration": 60
     }
   }
