@@ -16,6 +16,7 @@ Logging:
 """
 
 from http.server import BaseHTTPRequestHandler
+from typing import Optional
 import datetime
 import json
 import math
@@ -23,7 +24,7 @@ import os
 
 # ── Logging setup ──────────────────────────────────────────────────────────────
 
-def _resolve_log_path() -> str | None:
+def _resolve_log_path() -> Optional[str]:
     """Return a writable log-file path, or None if the filesystem is read-only."""
     candidates = [
         # Project root  logs/  (works locally)
@@ -42,7 +43,7 @@ def _resolve_log_path() -> str | None:
             continue
     return None
 
-_LOG_PATH: str | None = _resolve_log_path()
+_LOG_PATH: Optional[str] = _resolve_log_path()
 
 
 def _log(entry: dict) -> None:
