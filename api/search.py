@@ -7,12 +7,55 @@ POST /api/search  → searches for places along a driving route, returns KML fil
 Environment variable:
     GOOGLE_MAPS_API_KEY  (optional) — if set, the frontend does not need to
                                       collect an API key from the user.
+
+Logging:
+    Every request is appended as a JSON line to:
+      • logs/search_log.jsonl  (project root — local development)
+      • /tmp/search_log.jsonl  (fallback — Vercel ephemeral /tmp)
+    Each entry is also printed to stdout (visible in the Vercel log dashboard).
 """
 
 from http.server import BaseHTTPRequestHandler
+import datetime
 import json
 import math
 import os
+
+# ── Logging setup ──────────────────────────────────────────────────────────────
+
+def _resolve_log_path() -> str | None:
+    """Return a writable log-file path, or None if the filesystem is read-only."""
+    candidates = [
+        # Project root  logs/  (works locally)
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                     "logs", "search_log.jsonl"),
+        # Vercel ephemeral tmp (wiped between cold starts, but visible within a session)
+        "/tmp/search_log.jsonl",
+    ]
+    for path in candidates:
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "a"):          # test write access
+                pass
+            return path
+        except OSError:
+            continue
+    return None
+
+_LOG_PATH: str | None = _resolve_log_path()
+
+
+def _log(entry: dict) -> None:
+    """Stamp and persist one log entry."""
+    entry["timestamp"] = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    line = json.dumps(entry, ensure_ascii=False)
+    print(line, flush=True)          # always hits stdout → Vercel dashboard
+    if _LOG_PATH:
+        try:
+            with open(_LOG_PATH, "a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+        except OSError:
+            pass
 
 try:
     import googlemaps
@@ -228,8 +271,20 @@ def build_kml(places: list, route_info: dict, poly_pts: list, search_label: str)
 
 class handler(BaseHTTPRequestHandler):
 
+    # ── Helpers shared across methods ──────────────────────────────────────────
+
+    def _client_ip(self) -> str:
+        """Best-effort real IP (Vercel sets X-Forwarded-For)."""
+        fwd = self.headers.get("X-Forwarded-For", "")
+        if fwd:
+            return fwd.split(",")[0].strip()
+        return self.headers.get("X-Real-Ip", "") or (self.client_address[0] if self.client_address else "unknown")
+
+    # ── Route handlers ─────────────────────────────────────────────────────────
+
     def do_GET(self):
         has_key = bool(os.environ.get("GOOGLE_MAPS_API_KEY", "").strip())
+        _log({"event": "config_fetch", "ip": self._client_ip()})
         self._json(200, {
             "has_server_key": has_key,
             "search_types": {k: v["label"] for k, v in SEARCH_TYPES.items()},
@@ -241,7 +296,11 @@ class handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
+        ip = self._client_ip()
+
         if not _GMAPS_AVAILABLE:
+            _log({"event": "search_error", "ip": ip, "http_status": 500,
+                  "error": "googlemaps package missing"})
             self._json(500, {"error": "Server missing 'googlemaps' package."})
             return
 
@@ -250,24 +309,44 @@ class handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length))
         except Exception:
+            _log({"event": "search_error", "ip": ip, "http_status": 400,
+                  "error": "invalid JSON body"})
             self._json(400, {"error": "Invalid JSON body."})
             return
 
         start      = (body.get("start") or "").strip()
         end        = (body.get("end") or "").strip()
         search_key = (body.get("search_type") or "petrol_pumps").strip()
-        api_key    = (body.get("api_key") or "").strip() or os.environ.get("GOOGLE_MAPS_API_KEY", "")
+        raw_key    = (body.get("api_key") or "").strip()
+        api_key    = raw_key or os.environ.get("GOOGLE_MAPS_API_KEY", "")
         radius     = max(100, min(int(body.get("radius") or 2000), 50000))
         interval   = max(1000, min(int(body.get("interval") or 10000), 100000))
 
+        # Base log entry — populated progressively
+        log_entry: dict = {
+            "event":              "search",
+            "ip":                 ip,
+            "start":              start,
+            "end":                end,
+            "search_type":        search_key,
+            "radius_m":           radius,
+            "interval_m":         interval,
+            "has_custom_api_key": bool(raw_key),   # true = user provided own key
+        }
+
+        def abort(status: int, msg: str) -> None:
+            log_entry.update({"status": "error", "http_status": status, "error": msg})
+            _log(log_entry)
+            self._json(status, {"error": msg})
+
         if not start or not end:
-            self._json(400, {"error": "'start' and 'end' are required."})
+            abort(400, "'start' and 'end' are required.")
             return
         if not api_key:
-            self._json(400, {"error": "A Google Maps API key is required."})
+            abort(400, "A Google Maps API key is required.")
             return
         if search_key not in SEARCH_TYPES:
-            self._json(400, {"error": f"Unknown search_type '{search_key}'."})
+            abort(400, f"Unknown search_type '{search_key}'.")
             return
 
         search_cfg = SEARCH_TYPES[search_key]
@@ -277,10 +356,10 @@ class handler(BaseHTTPRequestHandler):
         try:
             dirs = client.directions(start, end, mode="driving")
         except Exception as e:
-            self._json(502, {"error": f"Directions API error: {e}"})
+            abort(502, f"Directions API error: {e}")
             return
         if not dirs:
-            self._json(404, {"error": f"No route found: '{start}' → '{end}'"})
+            abort(404, f"No route found: '{start}' → '{end}'")
             return
 
         route    = dirs[0]
@@ -316,7 +395,18 @@ class handler(BaseHTTPRequestHandler):
         route_info = {"start": start, "end": end, "distance_km": dist_km, "duration": duration}
         kml = build_kml(formatted, route_info, poly_pts, search_cfg["label"])
 
-        # 6. Respond with downloadable KML
+        # 6. Log success
+        log_entry.update({
+            "status":            "ok",
+            "http_status":       200,
+            "result_count":      len(formatted),
+            "route_distance_km": round(dist_km, 2),
+            "route_duration":    duration,
+            "sample_points":     len(samples),
+        })
+        _log(log_entry)
+
+        # 7. Respond with downloadable KML
         def safe(s: str) -> str:
             return "".join(c if c.isalnum() or c in "-_" else "_" for c in s)
 
