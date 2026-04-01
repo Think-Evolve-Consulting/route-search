@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Route Places Finder</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .grad { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); }
+    .grad-text { background: linear-gradient(135deg, #6366f1, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { animation: spin 0.8s linear infinite; }
+    input:focus, select:focus { outline: none; box-shadow: 0 0 0 3px rgba(99,102,241,0.2); }
+    details summary::-webkit-details-marker { display: none; }
+  </style>
+</head>
+<body class="min-h-full bg-slate-50 font-sans antialiased">
+
+  <!-- ── Header ── -->
+  <header class="grad text-white py-14 px-4 text-center">
+    <div class="max-w-2xl mx-auto">
+      <div class="inline-flex items-center justify-center w-14 h-14 bg-white/20 rounded-2xl mb-5">
+        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
+        </svg>
+      </div>
+      <h1 class="text-4xl font-bold tracking-tight mb-3">Route Places Finder</h1>
+      <p class="text-lg text-white/85 max-w-lg mx-auto leading-relaxed">
+        Find petrol pumps, EV chargers, toilets, malls &amp; more along any driving route.
+        Download a KML file ready for Google My Maps.
+      </p>
+    </div>
+  </header>
+
+  <!-- ── Main ── -->
+  <main class="max-w-2xl mx-auto px-4 py-10 space-y-6">
+
+    <!-- Form card -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+      <h2 class="text-lg font-semibold text-slate-800 mb-6">Search your route</h2>
+
+      <form id="searchForm" class="space-y-5" autocomplete="off">
+
+        <!-- Start -->
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1.5">
+            Start location
+          </label>
+          <div class="relative">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+              </svg>
+            </span>
+            <input type="text" id="start" required
+              placeholder="e.g. Mumbai, Maharashtra"
+              class="w-full border border-slate-300 rounded-xl pl-9 pr-4 py-2.5 text-sm bg-white transition-shadow" />
+          </div>
+        </div>
+
+        <!-- End -->
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1.5">
+            End location
+          </label>
+          <div class="relative">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6H10.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"/>
+              </svg>
+            </span>
+            <input type="text" id="end" required
+              placeholder="e.g. Goa, India"
+              class="w-full border border-slate-300 rounded-xl pl-9 pr-4 py-2.5 text-sm bg-white transition-shadow" />
+          </div>
+        </div>
+
+        <!-- Search type -->
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1.5">
+            What to find along the route
+          </label>
+          <select id="searchType"
+            class="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm bg-white transition-shadow cursor-pointer">
+            <!-- populated by JS from /api/search GET -->
+            <option value="petrol_pumps">⛽ Petrol Pumps</option>
+          </select>
+        </div>
+
+        <!-- API key (shown only when no server-side key is configured) -->
+        <div id="apiKeySection" class="hidden">
+          <label class="block text-sm font-medium text-slate-700 mb-1.5">
+            Google Maps API Key
+          </label>
+          <input type="password" id="apiKey"
+            placeholder="AIzaSy…"
+            class="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-mono bg-white transition-shadow" />
+          <p class="mt-1.5 text-xs text-slate-500">
+            Requires <strong>Places API</strong> and <strong>Directions API</strong>.
+            <a href="https://console.cloud.google.com/apis/dashboard"
+               target="_blank" rel="noopener"
+               class="text-indigo-600 hover:underline">Get a key →</a>
+          </p>
+        </div>
+
+        <!-- Advanced options -->
+        <details class="group">
+          <summary class="flex items-center gap-1.5 text-sm text-indigo-600 font-medium cursor-pointer select-none list-none hover:text-indigo-700">
+            <svg id="chevron" class="w-4 h-4 transition-transform group-open:rotate-90"
+                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+            </svg>
+            Advanced options
+          </summary>
+          <div class="mt-4 grid grid-cols-2 gap-4 pl-1">
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">
+                Search radius (metres)
+                <span class="font-normal text-slate-400 ml-1">100 – 50 000</span>
+              </label>
+              <input type="number" id="radius" value="2000" min="100" max="50000" step="100"
+                class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white transition-shadow" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">
+                Sample interval (metres)
+                <span class="font-normal text-slate-400 ml-1">1 000 – 100 000</span>
+              </label>
+              <input type="number" id="interval" value="10000" min="1000" max="100000" step="1000"
+                class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white transition-shadow" />
+            </div>
+            <p class="col-span-2 text-xs text-slate-400 -mt-1">
+              Smaller interval → more sample points → denser results (but slower). Capped at 50 points.
+            </p>
+          </div>
+        </details>
+
+        <!-- Submit -->
+        <button type="submit" id="submitBtn"
+          class="w-full grad text-white font-semibold py-3 rounded-xl transition-opacity hover:opacity-90
+                 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed mt-2">
+          <svg id="btnIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+          </svg>
+          <svg id="btnSpinner" class="hidden w-5 h-5 spinner"
+               viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+              d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1M5.6 18.4l2.1-2.1m8.6-8.6 2.1-2.1"/>
+          </svg>
+          <span id="btnText">Find Places &amp; Download KML</span>
+        </button>
+
+      </form>
+    </div>
+
+    <!-- Result card (hidden until search completes) -->
+    <div id="resultCard" class="hidden bg-white rounded-2xl shadow-sm border p-6"></div>
+
+    <!-- How-to instructions -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+      <h2 class="text-lg font-semibold text-slate-800 mb-5">How to view on Google My Maps</h2>
+      <ol class="space-y-4">
+        <li class="flex gap-3 text-sm text-slate-700">
+          <span class="flex-shrink-0 w-6 h-6 grad text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>
+          <span>Fill in the form above and click <strong>Find Places &amp; Download KML</strong>. Your browser will download a <code class="bg-slate-100 px-1 py-0.5 rounded text-xs">.kml</code> file.</span>
+        </li>
+        <li class="flex gap-3 text-sm text-slate-700">
+          <span class="flex-shrink-0 w-6 h-6 grad text-white rounded-full flex items-center justify-center text-xs font-bold">2</span>
+          <span>Open <a href="https://www.google.com/maps/d/" target="_blank" rel="noopener" class="text-indigo-600 hover:underline font-medium">google.com/maps/d</a> and click <strong>+ Create a new map</strong>.</span>
+        </li>
+        <li class="flex gap-3 text-sm text-slate-700">
+          <span class="flex-shrink-0 w-6 h-6 grad text-white rounded-full flex items-center justify-center text-xs font-bold">3</span>
+          <span>In the left panel click <strong>Import</strong> and upload the downloaded <code class="bg-slate-100 px-1 py-0.5 rounded text-xs">.kml</code> file. Two layers appear: <em>Route</em> and <em>Places</em>.</span>
+        </li>
+        <li class="flex gap-3 text-sm text-slate-700">
+          <span class="flex-shrink-0 w-6 h-6 grad text-white rounded-full flex items-center justify-center text-xs font-bold">4</span>
+          <span>Click <strong>Share</strong> → <em>Anyone with the link can view</em> to make the map public and copy the share link.</span>
+        </li>
+      </ol>
+
+      <div class="mt-5 p-4 bg-indigo-50 rounded-xl text-xs text-indigo-800 leading-relaxed">
+        <strong>KML contents:</strong> a <span class="font-semibold text-orange-600">driving route line</span> plus
+        colour-coded markers —
+        <span class="font-semibold text-green-700">green = open now</span>,
+        <span class="font-semibold text-red-600">red = closed</span>,
+        <span class="font-semibold text-yellow-600">yellow = hours unknown</span>.
+        Each marker links directly to Google Maps.
+      </div>
+    </div>
+
+  </main>
+
+  <footer class="text-center py-8 text-xs text-slate-400">
+    Powered by Google Maps Directions API &amp; Places API
+  </footer>
+
+  <script>
+    const API = '/api/search';
+    let hasServerKey = false;
+    let lastBlob = null;
+    let lastFilename = '';
+
+    const ICONS = {
+      petrol_pumps:       '⛽',
+      ev_charging:        '⚡',
+      toilets:            '🚻',
+      malls:              '🛍️',
+      restaurants:        '🍽️',
+      hotels:             '🏨',
+      hospitals:          '🏥',
+      atm:                '🏧',
+      pharmacy:           '💊',
+      cafe:               '☕',
+      supermarket:        '🛒',
+      tourist_attraction: '🗺️',
+    };
+
+    async function init() {
+      try {
+        const res = await fetch(API);
+        if (!res.ok) throw new Error('config fetch failed');
+        const data = await res.json();
+        hasServerKey = data.has_server_key;
+
+        if (!hasServerKey) {
+          document.getElementById('apiKeySection').classList.remove('hidden');
+        }
+
+        const sel = document.getElementById('searchType');
+        sel.innerHTML = '';
+        for (const [key, label] of Object.entries(data.search_types)) {
+          const opt = document.createElement('option');
+          opt.value = key;
+          opt.textContent = (ICONS[key] || '📍') + ' ' + label;
+          sel.appendChild(opt);
+        }
+      } catch {
+        // If the config fetch fails just show the API key field
+        document.getElementById('apiKeySection').classList.remove('hidden');
+      }
+    }
+
+    document.getElementById('searchForm').addEventListener('submit', async function (e) {
+      e.preventDefault();
+
+      const btn      = document.getElementById('submitBtn');
+      const btnText  = document.getElementById('btnText');
+      const btnIcon  = document.getElementById('btnIcon');
+      const spinner  = document.getElementById('btnSpinner');
+      const card     = document.getElementById('resultCard');
+
+      // Loading state
+      btn.disabled = true;
+      btnText.textContent = 'Searching…';
+      btnIcon.classList.add('hidden');
+      spinner.classList.remove('hidden');
+      card.classList.add('hidden');
+
+      const searchType = document.getElementById('searchType').value;
+      const start      = document.getElementById('start').value.trim();
+      const end        = document.getElementById('end').value.trim();
+
+      const body = {
+        start,
+        end,
+        search_type: searchType,
+        radius:   parseInt(document.getElementById('radius').value)   || 2000,
+        interval: parseInt(document.getElementById('interval').value) || 10000,
+      };
+
+      if (!hasServerKey) {
+        body.api_key = document.getElementById('apiKey').value.trim();
+      }
+
+      try {
+        const response = await fetch(API, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+        if (response.ok) {
+          const count    = response.headers.get('X-Result-Count') ?? '?';
+          const distance = response.headers.get('X-Route-Distance') ?? '?';
+          const duration = response.headers.get('X-Route-Duration') ?? '?';
+
+          const blob = await response.blob();
+          lastBlob = blob;
+          lastFilename = buildFilename(searchType, start, end);
+          triggerDownload(blob, lastFilename);
+
+          const icon = ICONS[searchType] || '📍';
+          card.innerHTML = `
+            <div class="flex items-start gap-4">
+              <div class="flex-shrink-0 w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
+                <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                </svg>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="font-semibold text-slate-800">KML downloaded!</p>
+                <p class="text-sm text-slate-600 mt-1">
+                  Found <strong>${count}</strong> ${icon} places along a
+                  <strong>${distance} km</strong> route (${duration}).
+                </p>
+                <p class="text-xs text-slate-400 mt-1 truncate">
+                  File: <code class="bg-slate-100 px-1 py-0.5 rounded">${escHtml(lastFilename)}</code>
+                </p>
+                <button onclick="reDownload()"
+                  class="mt-2 text-xs text-indigo-600 hover:underline font-medium">
+                  ↓ Download again
+                </button>
+              </div>
+            </div>`;
+          card.className = card.className.replace('hidden', '').trim()
+            + ' bg-white rounded-2xl shadow-sm border border-green-200 p-6';
+          card.classList.remove('hidden');
+          card.classList.remove('border-red-200');
+          card.classList.add('border-green-200');
+
+        } else {
+          let msg = 'An unexpected error occurred.';
+          try { msg = (await response.json()).error || msg; } catch {}
+          showError(msg);
+        }
+
+      } catch (err) {
+        showError('Network error — ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btnText.textContent = 'Find Places & Download KML';
+        btnIcon.classList.remove('hidden');
+        spinner.classList.add('hidden');
+      }
+    });
+
+    function triggerDownload(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    }
+
+    function reDownload() {
+      if (lastBlob) triggerDownload(lastBlob, lastFilename);
+    }
+
+    function buildFilename(type, start, end) {
+      const clean = s => s.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 20);
+      return `${type}_${clean(start)}_to_${clean(end)}.kml`;
+    }
+
+    function showError(msg) {
+      const card = document.getElementById('resultCard');
+      card.innerHTML = `
+        <div class="flex items-start gap-4">
+          <div class="flex-shrink-0 w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
+            <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </div>
+          <div>
+            <p class="font-semibold text-slate-800">Something went wrong</p>
+            <p class="text-sm text-red-600 mt-1">${escHtml(msg)}</p>
+          </div>
+        </div>`;
+      card.classList.remove('hidden', 'border-green-200');
+      card.classList.add('border-red-200');
+    }
+
+    function escHtml(s) {
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    init();
+  </script>
+</body>
+</html>
